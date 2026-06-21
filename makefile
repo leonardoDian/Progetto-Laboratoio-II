@@ -3,7 +3,7 @@ CFLAGS = -Wall -O3 -pthread
 LDFLAGS = -lm -pthread
 TARGET = msf.out
 
-SRCS = msf.c
+SRCS = visivo.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
