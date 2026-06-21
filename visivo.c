@@ -15,9 +15,6 @@
  * ============================================================================
  */
 
-/**
- * arco - Struttura per rappresentare un arco del grafo
- */
 typedef struct arco {
     int u, v;
     int weight;
@@ -25,9 +22,6 @@ typedef struct arco {
     struct arco *next;
 } arco;
 
-/**
- * elemento - Struttura per la lista di adiacenza
- */
 typedef struct elemento {
     int id;
     int w;
@@ -35,17 +29,11 @@ typedef struct elemento {
     struct elemento *next;
 } elemento;
 
-/**
- * unionFind - Struttura per Union-Find (Disjoint Set Union)
- */
 typedef struct {
     int *parent;
     int *rank;
 } unionFind;
 
-/**
- * grafo - Struttura principale che contiene lo stato del grafo
- */
 typedef struct {
     arco **gHash;
     elemento **vicini;
@@ -66,17 +54,11 @@ typedef struct {
     unionFind *uf;
 } grafo;
 
-/**
- * operazione - Struttura per rappresentare un'operazione dal file
- */
 typedef struct {
     char tipo;
     int u, v, w;
 } operazione;
 
-/**
- * buffer_t - Buffer circolare thread-safe per le operazioni
- */
 typedef struct {
     operazione *buffer;
     int dimensione;
@@ -495,7 +477,7 @@ void unlock_hash(grafo *g, int u, int v) {
 
 /*
  * ============================================================================
- * DFS FOR MSF PATH SEARCH
+ * DFS FOR MSF PATH SEARCH - Versione che non usa lock
  * ============================================================================
  */
 
@@ -506,7 +488,15 @@ bool dfs_trova_max(grafo *g, int curr, int target, bool *visited, arco **max_arc
     elemento *e = g->vicini[curr];
     while (e) {
         if (e->msf && !visited[e->id]) {
-            arco *a = trova_arco(g, curr, e->id);
+            // Cerca l'arco senza lock (già protetto dal chiamante)
+            int h = hash_function(curr, e->id, g->hashSize);
+            arco *a = g->gHash[h];
+            while (a) {
+                if ((a->u == curr && a->v == e->id) || (a->u == e->id && a->v == curr))
+                    break;
+                a = a->next;
+            }
+            
             if (a && dfs_trova_max(g, e->id, target, visited, max_arco, max_peso)) {
                 if (a->weight > *max_peso) {
                     *max_peso = a->weight;
@@ -616,6 +606,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
     }
     if (u > v) { int tmp = u; u = v; v = tmp; }
 
+    // Acquisisci lock sulle componenti
     lock_componenti(g, u, v);
     if (g->terminato) { 
         unlock_componenti(g, u, v); 
@@ -623,6 +614,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         return; 
     }
 
+    // Acquisisci lock sulla hash table
     lock_hash(g, u, v);
     if (trova_arco(g, u, v) != NULL) {
         unlock_hash(g, u, v);
@@ -631,6 +623,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         return;
     }
     
+    // Crea nuovo arco
     arco *nuovo = malloc(sizeof(arco));
     if (!nuovo) { perror("malloc"); exit(1); }
     nuovo->u = u;
@@ -654,14 +647,17 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
     pthread_mutex_unlock(&g->mutMSF);
     
     if (cu == cv) {
+        // Stessa componente: trova arco max nel ciclo
         bool *visited = calloc(g->numNodi, sizeof(bool));
         if (!visited) { perror("calloc"); exit(1); }
         
         arco *max_arco = NULL;
         int max_peso = -1;
         
+        // DFS per trovare l'arco di peso massimo nel percorso
         if (dfs_trova_max(g, u, v, visited, &max_arco, &max_peso)) {
             if (max_arco && w < max_peso) {
+                // Rimuovi l'arco di peso massimo dalla MSF
                 lock_hash(g, max_arco->u, max_arco->v);
                 max_arco->msf = false;
                 
@@ -678,6 +674,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
                 pthread_mutex_unlock(&g->mutMSF);
                 unlock_hash(g, max_arco->u, max_arco->v);
 
+                // Aggiungi il nuovo arco alla MSF
                 lock_hash(g, u, v);
                 nuovo->msf = true;
                 
@@ -697,6 +694,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         }
         free(visited);
     } else {
+        // Componenti diverse: aggiungi alla MSF
         lock_hash(g, u, v);
         nuovo->msf = true;
         
@@ -750,6 +748,7 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
     bool era_msf = a->msf;
     int peso = a->weight;
 
+    // Rimuovi l'arco dalla hash table
     int h = hash_function(u, v, g->hashSize);
     arco *cur = g->gHash[h], *prev = NULL;
     while (cur) {
@@ -773,21 +772,28 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
         g->costoMSF -= peso;
         pthread_mutex_unlock(&g->mutMSF);
         
+        // Ricalcola le componenti
         ricalcola_finale(g);
         
+        // Cerca il minimo arco per riconnettere le componenti
         arco *min_arco = NULL;
         int min_peso = INT_MAX;
+        
+        // Salva le componenti correnti per evitare lock ricorsivi
+        int *comp_temp = malloc(g->numNodi * sizeof(int));
+        if (!comp_temp) { perror("malloc"); exit(1); }
+        pthread_mutex_lock(&g->mutMSF);
+        for (int i = 0; i < g->numNodi; i++)
+            comp_temp[i] = g->cCon[i];
+        pthread_mutex_unlock(&g->mutMSF);
         
         for (int i = 0; i < g->hashSize; i++) {
             pthread_mutex_lock(&g->mutHash[i % g->nmutex]);
             arco *a2 = g->gHash[i];
             while (a2) {
                 if (!a2->msf && a2->u != 0 && a2->v != 0) {
-                    int cu, cv;
-                    pthread_mutex_lock(&g->mutMSF);
-                    cu = g->cCon[a2->u];
-                    cv = g->cCon[a2->v];
-                    pthread_mutex_unlock(&g->mutMSF);
+                    int cu = comp_temp[a2->u];
+                    int cv = comp_temp[a2->v];
                     
                     if (cu != cv && a2->weight < min_peso) {
                         min_peso = a2->weight;
@@ -798,6 +804,7 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
             }
             pthread_mutex_unlock(&g->mutHash[i % g->nmutex]);
         }
+        free(comp_temp);
         
         if (min_arco) {
             lock_hash(g, min_arco->u, min_arco->v);
