@@ -654,6 +654,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         arco *max_arco = NULL;
         int max_peso = -1;
         
+        // IMPORTANTE: se u o v è 0, dobbiamo gestire il caso speciale
         if (dfs_trova_max(g, u, v, visited, &max_arco, &max_peso)) {
             if (max_arco && w < max_peso) {
                 // Rimuovi l'arco di peso massimo dalla MSF
@@ -707,6 +708,7 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         
         pthread_mutex_lock(&g->mutMSF);
         g->costoMSF += w;
+        // Unisci le componenti - IMPORTANTE: usa il minimo tra cu e cv come root
         int newRoot = (cu < cv) ? cu : cv;
         int oldRoot = (cu < cv) ? cv : cu;
         for (int i = 0; i < g->numNodi; i++) {
@@ -720,7 +722,6 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
     unlock_componenti(g, u, v);
     *valido = true;
 }
-
 void canc_arco(grafo *g, int u, int v, bool *valido) {
     if (u < 0 || v < 0 || u >= g->numNodi || v >= g->numNodi || u == v) {
         *valido = false;
