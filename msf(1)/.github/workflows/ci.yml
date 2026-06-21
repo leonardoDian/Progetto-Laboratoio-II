@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  python-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.11
+          
+      - name: Test esistenza README.md
+        run: test -e README.md
+
+      - name: make
+        run: make -B    
+
+      - name: Test minimo.gr
+        run: |
+          # msf.py 
+          echo "test minimo.gr python" >&2
+          echo "7 2 16" > mod.0
+          echo "5 2 38" > mod.mp
+          echo "4 3 31" > mod.mm
+          echo "" > empty
+          python msf.py minimo.gr empty >stdout.txt 2>stderr.txt
+          diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+          python msf.py minimo.gr minimo.mp >stdout.txt 2>stderr.txt 
+          diff stdout.txt mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+
+          # msf.out
+          echo "test minimo.gr C" >&2
+          ./msf.out minimo.gr empty 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.0
+          ./msf.out minimo.gr minimo.mm 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.mm 2> >(sed -u 's/^/STDERR: /' >&2)
+          if [ -f COMPLETO ]; then
+            ./msf.out minimo.gr minimo.mp 2>stderr.txt >stdout.txt
+            tail -n 1 stdout.txt > stdout.1
+            diff stdout.1 mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+            echo "test Msf.java" >&2
+            make -B Msf.class
+            java Msf minimo.gr minimo.mp 2>stderr.txt >stdout.txt
+            tail -n 1 stdout.txt > stdout.1
+            diff stdout.1 mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+          fi
+          exit 0
+
+      - name: Test rome99.gr
+        run: |
+          # msf.py 
+          echo "test rome99.gr python" >&2
+          echo "4444 23 1215457" > mod.0
+          echo "4402 37 1189497" > mod.mp
+          echo "4348 39 1236018" > mod.mm
+          echo "" > empty
+          python msf.py rome99.gr empty >stdout.txt 2>stderr.txt
+          diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+          python msf.py rome99.gr rome99.mp >stdout.txt 2>stderr.txt 
+          diff stdout.txt mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+
+          # msf.out + java
+          echo "test rome99.gr C" >&2
+          ./msf.out rome99.gr empty -t 6 -H 80000 -M 800 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.0
+          ./msf.out rome99.gr rome99.mm 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.mm 2> >(sed -u 's/^/STDERR: /' >&2)
+          if [ -f COMPLETO ]; then
+            ./msf.out rome99.gr rome99.mp 2>stderr.txt >stdout.txt
+            tail -n 1 stdout.txt > stdout.1
+            diff stdout.1 mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+            echo "test Msf.java" >&2
+            make -B Msf.class
+            java Msf rome99.gr empty >stdout.txt 2>stderr.txt
+            diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+            java Msf rome99.gr rome99.mp 2>stderr.txt >stdout.txt
+            diff stdout.txt mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+          fi
+          exit 0
+
+      - name: Test stelle.gr
+        run: |
+          # msf.py 
+          echo "test stelle.gr python" >&2
+          echo "9997 3 9997" > mod.0
+          echo "9999 1 9999" > mod.mp
+          echo "8999 1001 8999" > mod.mm
+          echo "" > empty
+          python msf.py stelle.gr empty >stdout.txt 2>stderr.txt
+          diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+          python msf.py stelle.gr stelle.mp >stdout.txt 2>stderr.txt 
+          diff stdout.txt mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+
+          # msf.out + java
+          echo "test stelle.gr C" >&2
+          ./msf.out stelle.gr empty -t 2 -H 90000 -M 900 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.0
+          ./msf.out stelle.gr stelle.mm  -t 2 -H 90000 -M 900 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.mm 2> >(sed -u 's/^/STDERR: /' >&2)
+          if [ -f COMPLETO ]; then
+            ./msf.out stelle.gr stelle.mp 2>stderr.txt >stdout.txt
+            tail -n 1 stdout.txt > stdout.1
+            diff stdout.1 mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+            echo "test Msf.java" >&2
+            make -B Msf.class
+            java Msf stelle.gr stelle.mp 2>stderr.txt >stdout.txt
+            diff stdout.txt mod.mp 2> >(sed -u 's/^/STDERR: /' >&2)
+          fi
+          exit 0
+
+      - name: Test USA NW road network (MSF > 2^32 !!!!)
+        run: |
+          zstd -d USA-NW.gr.zst
+          # msf.py 
+          echo "test USA-NW python" >&2
+          echo "1409887 282 3522671493" > mod.0
+          echo "" > empty
+          python msf.py USA-NW.gr usanw500.mm >stdout.txt 2>stderr.txt
+          diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+
+          # msf.out + java
+          echo "test USA-NW C" >&2
+          ./msf.out USA-NW.gr usanw500.mm -t 2 -H 400000 -M 3000 2>stderr.txt >stdout.txt
+          tail -n 1 stdout.txt > stdout.1
+          diff stdout.1 mod.0
+          if [ -f COMPLETO ]; then
+            echo "test USA-NW Msf.java" >&2
+            make -B Msf.class
+            java Msf USA-NW.gr usanw500.mm 2>stderr.txt >stdout.txt
+            diff stdout.txt mod.0 2> >(sed -u 's/^/STDERR: /' >&2)
+          fi
+          exit 0
+
+      - name: Install valgrind
+        run: sudo apt install -y valgrind
+
+      - name: Test valgrind stelle
+        run: |
+          # msf.out; i valori di output sono già stati testati controllo memoria e leak
+          echo "test valgrind su input stelle.gr + empty" >&2
+          # exit 5 se c'e un memory leak al prossimo comando
+          valgrind --leak-check=full --error-exitcode=5 ./msf.out stelle.gr empty 2>stderr.txt >stdout.txt
+          echo "test valgrind su input stelle.gr + stelle.mm" >&2
+          # exit 6 se c'e un memory leak al prossimo comando
+          valgrind --leak-check=full --error-exitcode=6 ./msf.out stelle.gr stelle.mm 2>stderr.txt >stdout.txt
+          if [ -f COMPLETO ]; then
+            echo "test valgrind su input stelle.gr + stelle.pm" >&2
+            # exit 7 se c'e un memory leak al prossimo comando
+            valgrind --leak-check=full --error-exitcode=7 ./msf.out stelle.gr stelle.mp 2>stderr.txt >stdout.txt
+          fi
+          exit 0
+
+      - name: Test valgrind rome99 
+        run: |
+          # msf.out; i valori di output sono già stati testati controllo memoria e leak
+          echo "test valgrind su input rome99.gr + empty" >&2
+          # exit 5 se c'e un memory leak al prossimo comando
+          valgrind --leak-check=full --error-exitcode=5 ./msf.out rome99.gr empty 2>stderr.txt >stdout.txt
+          echo "test valgrind su input rome99.gr + rome99.mm" >&2
+          # exit 6 se c'e un memory leak al prossimo comando
+          valgrind --leak-check=full --error-exitcode=6 ./msf.out rome99.gr rome99.mm 2>stderr.txt >stdout.txt
+          if [ -f COMPLETO ]; then
+            echo "test valgrind su input rome99.gr + rome99.pm" >&2
+            # exit 7 se c'e un memory leak al prossimo comando
+            valgrind --leak-check=full --error-exitcode=7 ./msf.out rome99.gr rome99.mp 2>stderr.txt >stdout.txt
+          fi
+          exit 0
+          
+
