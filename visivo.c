@@ -387,7 +387,7 @@ void kruskal(grafo *g) {
     bool *visti = calloc(g->numNodi, sizeof(bool));
     if (!visti) { perror("calloc"); exit(1); }
     g->numCoCo = 0;
-    for (int i = 1; i < g->numNodi; i++) {
+    for (int i = 0; i < g->numNodi; i++) {
         if (!visti[g->cCon[i]]) {
             visti[g->cCon[i]] = true;
             g->numCoCo++;
@@ -477,7 +477,7 @@ void unlock_hash(grafo *g, int u, int v) {
 
 /*
  * ============================================================================
- * DFS FOR MSF PATH SEARCH - Versione che non usa lock
+ * DFS FOR MSF PATH SEARCH
  * ============================================================================
  */
 
@@ -488,7 +488,7 @@ bool dfs_trova_max(grafo *g, int curr, int target, bool *visited, arco **max_arc
     elemento *e = g->vicini[curr];
     while (e) {
         if (e->msf && !visited[e->id]) {
-            // Cerca l'arco senza lock (già protetto dal chiamante)
+            // Cerca l'arco senza lock aggiuntivi
             int h = hash_function(curr, e->id, g->hashSize);
             arco *a = g->gHash[h];
             while (a) {
@@ -522,7 +522,7 @@ void ricalcola_numCoCo(grafo *g) {
     if (!visti) { perror("calloc"); exit(1); }
     
     g->numCoCo = 0;
-    for (int i = 1; i < g->numNodi; i++) {
+    for (int i = 0; i < g->numNodi; i++) {
         if (!visti[g->cCon[i]]) {
             visti[g->cCon[i]] = true;
             g->numCoCo++;
@@ -551,7 +551,7 @@ void ricalcola_finale(grafo *g) {
     if (!comp) { perror("malloc"); exit(1); }
     
     int num_comp = 0;
-    for (int i = 1; i < g->numNodi; i++) {
+    for (int i = 0; i < g->numNodi; i++) {
         if (!visited[i]) {
             int *stack = malloc(g->numNodi * sizeof(int));
             if (!stack) { perror("malloc"); exit(1); }
@@ -565,7 +565,7 @@ void ricalcola_finale(grafo *g) {
                 comp[nodo] = i;
                 elemento *e = g->vicini[nodo];
                 while (e) {
-                    if (e->msf && !visited[e->id] && e->id != 0) {
+                    if (e->msf && !visited[e->id]) {
                         visited[e->id] = true;
                         stack[top++] = e->id;
                     }
@@ -574,17 +574,17 @@ void ricalcola_finale(grafo *g) {
             }
             
             int min = i;
-            for (int j = 1; j < g->numNodi; j++) {
+            for (int j = 0; j < g->numNodi; j++) {
                 if (comp[j] == i && j < min) min = j;
             }
-            for (int j = 1; j < g->numNodi; j++) {
+            for (int j = 0; j < g->numNodi; j++) {
                 if (comp[j] == i) comp[j] = min;
             }
             num_comp++;
             free(stack);
         }
     }
-    comp[0] = 0;
+    
     for (int i = 0; i < g->numNodi; i++)
         g->cCon[i] = comp[i];
     g->numCoCo = num_comp;
@@ -654,7 +654,6 @@ void add_arco(grafo *g, int u, int v, int w, bool *valido) {
         arco *max_arco = NULL;
         int max_peso = -1;
         
-        // DFS per trovare l'arco di peso massimo nel percorso
         if (dfs_trova_max(g, u, v, visited, &max_arco, &max_peso)) {
             if (max_arco && w < max_peso) {
                 // Rimuovi l'arco di peso massimo dalla MSF
@@ -779,7 +778,7 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
         arco *min_arco = NULL;
         int min_peso = INT_MAX;
         
-        // Salva le componenti correnti per evitare lock ricorsivi
+        // Salva le componenti correnti
         int *comp_temp = malloc(g->numNodi * sizeof(int));
         if (!comp_temp) { perror("malloc"); exit(1); }
         pthread_mutex_lock(&g->mutMSF);
@@ -791,7 +790,7 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
             pthread_mutex_lock(&g->mutHash[i % g->nmutex]);
             arco *a2 = g->gHash[i];
             while (a2) {
-                if (!a2->msf && a2->u != 0 && a2->v != 0) {
+                if (!a2->msf) {
                     int cu = comp_temp[a2->u];
                     int cv = comp_temp[a2->v];
                     
@@ -824,7 +823,7 @@ void canc_arco(grafo *g, int u, int v, bool *valido) {
             int cv = g->cCon[min_arco->v];
             int newRoot = (cu < cv) ? cu : cv;
             int oldRoot = (cu < cv) ? cv : cu;
-            for (int i = 1; i < g->numNodi; i++) {
+            for (int i = 0; i < g->numNodi; i++) {
                 if (g->cCon[i] == oldRoot)
                     g->cCon[i] = newRoot;
             }
