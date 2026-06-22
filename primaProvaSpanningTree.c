@@ -4,26 +4,30 @@
 #include <limits.h>
 
 // -------------------- STRUTTURE DATI --------------------
-typedef struct arco {
+typedef struct arco 
+{
     int u, v;
     int weight;
     bool msf;
     struct arco *next;
 } arco;
 
-typedef struct elemento {
+typedef struct elemento 
+{
     int id;
     int w;
     bool msf;
     struct elemento *next;
 } elemento;
 
-typedef struct {
+typedef struct 
+{
     int *parent;
     int *rank;
 } unionFind;
 
-typedef struct {
+typedef struct 
+{
     arco **gHash;
     elemento **vicini;
     int *cCon;
@@ -35,14 +39,17 @@ typedef struct {
 } grafo;
 
 // -------------------- UTILITY --------------------
-ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
+ssize_t getline(char **lineptr, size_t *n, FILE *stream) 
+{
     // Implementazione portabile (già presente nel codice originale)
     size_t pos = 0;
     int c;
     if (!lineptr || !stream || !n) return -1;
     if (!*lineptr) { *n = 128; *lineptr = malloc(*n); if (!*lineptr) return -1; }
-    while ((c = fgetc(stream)) != EOF) {
-        if (pos + 1 >= *n) {
+    while ((c = fgetc(stream)) != EOF) 
+    {
+        if (pos + 1 >= *n) 
+        {
             size_t new_size = *n * 2;
             char *new_ptr = realloc(*lineptr, new_size);
             if (!new_ptr) return -1;
@@ -58,7 +65,8 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
 }
 
 // -------------------- GRAFO --------------------
-void registraGrafo(FILE *fGrafo, grafo *g) {
+void registraGrafo(FILE *fGrafo, grafo *g) 
+{
     char *linea = NULL;
     size_t lunghezza = 0;
     ssize_t nLetti;
@@ -66,8 +74,10 @@ void registraGrafo(FILE *fGrafo, grafo *g) {
     g->numArchi = 0;
     g->costoMSF = 0;
 
-    while ((nLetti = getline(&linea, &lunghezza, fGrafo)) != -1) {
-        if (linea[0] == 'p') {
+    while ((nLetti = getline(&linea, &lunghezza, fGrafo)) != -1) 
+    {
+        if (linea[0] == 'p') 
+        {
             int nodiFile, archiFile;
             sscanf(linea, "p sp %d %d", &nodiFile, &archiFile);
             g->numNodi = nodiFile + 1;   // nodi da 0 a nodiFile
@@ -83,18 +93,22 @@ void registraGrafo(FILE *fGrafo, grafo *g) {
             g->uf->rank = malloc(g->numNodi * sizeof(int));
 
             for (int i = 0; i < hashSize; i++) g->gHash[i] = NULL;
-            for (int i = 0; i < g->numNodi; i++) {
+            for (int i = 0; i < g->numNodi; i++) 
+            {
                 g->vicini[i] = NULL;
                 g->cCon[i] = i;
                 g->uf->parent[i] = i;
                 g->uf->rank[i] = 0;
             }
-        } else if (linea[0] == 'a') {
+        } 
+        else if (linea[0] == 'a') 
+        {
             int u, v, w;
             sscanf(linea, "a %d %d %d", &u, &v, &w);
-            // NON convertiamo: i nodi nel file sono 1..N e li usiamo così
-            // (il nodo 0 è extra e non compare)
-            if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi) {
+            
+            // Controllo il range dei nodi all'interno del file
+            if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi) 
+            {
                 fprintf(stderr, "ERRORE: nodo fuori range (%d,%d)\n", u, v);
                 continue;
             }
@@ -554,7 +568,7 @@ int main(int argc, char *argv[]) {
     fclose(fMod);
 
     // (Opzionale) statistiche finali
-    // stampaStatistiche(&g);
+    stampaStatistiche(&g);
 
     // Non è richiesta stampa finale, ma se volessimo ristampare lo stato:
     // printf("%d %d %ld\n", g.numArchi, g.numCoCo, g.costoMSF);
