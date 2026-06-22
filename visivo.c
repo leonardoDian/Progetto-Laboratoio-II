@@ -635,7 +635,10 @@ bool popola_grafo(const char *filename, grafo *g) {
 
 bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     FILE *f = fopen(filename, "r");
-    if (!f) { fprintf(stderr, "Errore: impossibile aprire %s\n", filename); return false; }
+    if (!f) {
+        fprintf(stderr, "Errore: impossibile aprire %s\n", filename);
+        return false;
+    }
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
@@ -643,26 +646,13 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
         if (line[0] == '+') {
             if (sscanf(line, "+ %d %d %d", &op.u, &op.v, &op.w) == 3) {
                 op.op = '+';
-                op.u--; op.v--;
-                if (op.u < 0 || op.v < 0) { // se il file ha nodi 0-based, non convertire?
-                    // Se il file usa già 0-based, non sottrarre.
-                    // Per sicurezza, se dopo la sottrazione diventa negativo, ripristina.
-                    // Ma assumiamo che il file sia 1-based.
-                    // Se il file ha 0, lo segnaliamo come errore.
-                    fprintf(stderr, "Operazione con nodo <=0: + %d %d %d\n", op.u+1, op.v+1, op.w);
-                    continue;
-                }
+                // Non convertire: i nodi sono già 0-based
                 buffer_insert(buffer, op);
             }
         } else if (line[0] == '-') {
             if (sscanf(line, "- %d %d", &op.u, &op.v) == 2) {
                 op.op = '-';
                 op.w = 0;
-                op.u--; op.v--;
-                if (op.u < 0 || op.v < 0) {
-                    fprintf(stderr, "Operazione con nodo <=0: - %d %d\n", op.u+1, op.v+1);
-                    continue;
-                }
                 buffer_insert(buffer, op);
             }
         }
@@ -670,7 +660,6 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     fclose(f);
     return true;
 }
-
 /* ========== STATISTICHE ========== */
 
 void calcola_statistiche(grafo *g) {
