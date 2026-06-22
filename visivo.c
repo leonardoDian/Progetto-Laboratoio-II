@@ -449,6 +449,7 @@ bool cancella_arco(grafo *g, int u, int v) {
         return false;
     }
 
+    // SALVA i valori prima di rimuovere
     int peso = a->weight;
     bool eraMSF = a->msf;
 
@@ -635,7 +636,8 @@ bool popola_grafo(const char *filename, grafo *g) {
 
 bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     FILE *f = fopen(filename, "r");
-    if (!f) return false;
+    if (!f) { fprintf(stderr, "Errore: impossibile aprire %s\n", filename); return false; }
+
     char op;
     int u, v, w;
     while (fscanf(f, " %c", &op) == 1) {
@@ -654,6 +656,7 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     fclose(f);
     return true;
 }
+
 /* ========== STATISTICHE ========== */
 
 void calcola_statistiche(grafo *g) {
