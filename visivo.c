@@ -446,7 +446,7 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
         bool *visited = calloc(g->numNodi, sizeof(bool));
         int pathLen = 0;
         if (trova_cammino(g, u, v, path, &pathLen, visited)) {
-            int maxU, maxV, maxW;
+            int maxU = -1, maxV = -1, maxW;
             if (trova_arco_max(g, path, pathLen, &maxU, &maxV, &maxW)) {
                 if (maxW > w) {
                     // Sostituisci
