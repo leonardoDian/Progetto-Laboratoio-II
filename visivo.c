@@ -24,9 +24,9 @@ typedef struct elemento {
 } elemento;
 
 typedef struct {
-    arco **gHash;          // tabella hash
-    elemento **vicini;     // liste di adiacenza
-    int *cCon;             // componenti connesse
+    arco **gHash;
+    elemento **vicini;
+    int *cCon;
     int numCoCo;
     long costoMSF;
     int numNodi;
@@ -47,13 +47,10 @@ typedef struct {
 typedef struct {
     operazione *buffer;
     int size;
-    int head;
-    int tail;
-    int count;
+    int head, tail, count;
     bool done;
     pthread_mutex_t mutex;
-    pthread_cond_t notEmpty;
-    pthread_cond_t notFull;
+    pthread_cond_t notEmpty, notFull;
 } buffer_t;
 
 typedef struct {
@@ -65,45 +62,32 @@ typedef struct {
 /* ========== UNION-FIND ========== */
 
 typedef struct {
-    int *parent;
-    int *rank;
+    int *parent, *rank;
 } union_find;
 
 union_find* uf_create(int n) {
     union_find *uf = malloc(sizeof(union_find));
     uf->parent = malloc(n * sizeof(int));
     uf->rank = malloc(n * sizeof(int));
-    for (int i = 0; i < n; i++) {
-        uf->parent[i] = i;
-        uf->rank[i] = 0;
-    }
+    for (int i = 0; i < n; i++) { uf->parent[i] = i; uf->rank[i] = 0; }
     return uf;
 }
 
 void uf_destroy(union_find *uf) {
-    free(uf->parent);
-    free(uf->rank);
-    free(uf);
+    free(uf->parent); free(uf->rank); free(uf);
 }
 
 int uf_find(union_find *uf, int x) {
-    if (uf->parent[x] != x)
-        uf->parent[x] = uf_find(uf, uf->parent[x]);
+    if (uf->parent[x] != x) uf->parent[x] = uf_find(uf, uf->parent[x]);
     return uf->parent[x];
 }
 
 void uf_union(union_find *uf, int x, int y) {
-    int rx = uf_find(uf, x);
-    int ry = uf_find(uf, y);
+    int rx = uf_find(uf, x), ry = uf_find(uf, y);
     if (rx == ry) return;
-    if (uf->rank[rx] < uf->rank[ry])
-        uf->parent[rx] = ry;
-    else if (uf->rank[rx] > uf->rank[ry])
-        uf->parent[ry] = rx;
-    else {
-        uf->parent[ry] = rx;
-        uf->rank[rx]++;
-    }
+    if (uf->rank[rx] < uf->rank[ry]) uf->parent[rx] = ry;
+    else if (uf->rank[rx] > uf->rank[ry]) uf->parent[ry] = rx;
+    else { uf->parent[ry] = rx; uf->rank[rx]++; }
 }
 
 /* ========== FUNZIONI DEL GRAFO ========== */
@@ -139,41 +123,30 @@ grafo* grafo_init(int numNodi, int hashSize, int nMutex) {
     g->compBusy = calloc(numNodi, sizeof(bool));
 
     g->mutexArray = malloc(nMutex * sizeof(pthread_mutex_t));
-    for (int i = 0; i < nMutex; i++)
-        pthread_mutex_init(&g->mutexArray[i], NULL);
+    for (int i = 0; i < nMutex; i++) pthread_mutex_init(&g->mutexArray[i], NULL);
 
     pthread_mutex_init(&g->compMutex, NULL);
     pthread_cond_init(&g->compCond, NULL);
-
     return g;
 }
 
 void grafo_destroy(grafo *g) {
     for (int i = 0; i < g->hashSize; i++) {
         arco *a = g->gHash[i];
-        while (a) {
-            arco *tmp = a;
-            a = a->next;
-            free(tmp);
-        }
+        while (a) { arco *tmp = a; a = a->next; free(tmp); }
     }
     free(g->gHash);
 
     for (int i = 0; i < g->numNodi; i++) {
         elemento *e = g->vicini[i];
-        while (e) {
-            elemento *tmp = e;
-            e = e->next;
-            free(tmp);
-        }
+        while (e) { elemento *tmp = e; e = e->next; free(tmp); }
     }
     free(g->vicini);
 
     free(g->cCon);
     free(g->compBusy);
 
-    for (int i = 0; i < g->nMutex; i++)
-        pthread_mutex_destroy(&g->mutexArray[i]);
+    for (int i = 0; i < g->nMutex; i++) pthread_mutex_destroy(&g->mutexArray[i]);
     free(g->mutexArray);
 
     pthread_mutex_destroy(&g->compMutex);
@@ -185,8 +158,7 @@ arco* trova_arco(grafo *g, int u, int v) {
     int hash = hash_function(u, v, g->hashSize);
     arco *a = g->gHash[hash];
     while (a) {
-        if ((a->u == u && a->v == v) || (a->u == v && a->v == u))
-            return a;
+        if ((a->u == u && a->v == v) || (a->u == v && a->v == u)) return a;
         a = a->next;
     }
     return NULL;
@@ -216,8 +188,7 @@ bool rimuovi_hash(grafo *g, int u, int v) {
 void aggiungi_adiacenza(grafo *g, int idx, int id, int w, bool msf) {
     elemento *nuovo = crea_elemento(id, w, msf);
     elemento **ptr = &g->vicini[idx];
-    while (*ptr && (*ptr)->id < id)
-        ptr = &(*ptr)->next;
+    while (*ptr && (*ptr)->id < id) ptr = &(*ptr)->next;
     nuovo->next = *ptr;
     *ptr = nuovo;
 }
@@ -251,7 +222,6 @@ void kruskal(grafo *g) {
         while (a) { archi[count++] = a; a = a->next; }
     }
 
-    // Bubble sort per peso
     for (int i = 0; i < count-1; i++)
         for (int j = 0; j < count-i-1; j++)
             if (archi[j]->weight > archi[j+1]->weight) {
@@ -280,8 +250,7 @@ void kruskal(grafo *g) {
         int root = uf_find(uf, i);
         int min = i;
         for (int j = 0; j < g->numNodi; j++)
-            if (uf_find(uf, j) == root && j < min)
-                min = j;
+            if (uf_find(uf, j) == root && j < min) min = j;
         g->cCon[i] = min;
     }
 
@@ -289,10 +258,7 @@ void kruskal(grafo *g) {
     g->numCoCo = 0;
     for (int i = 0; i < g->numNodi; i++) {
         int root = uf_find(uf, i);
-        if (!visti[root]) {
-            visti[root] = true;
-            g->numCoCo++;
-        }
+        if (!visti[root]) { visti[root] = true; g->numCoCo++; }
     }
     free(visti);
     uf_destroy(uf);
@@ -305,12 +271,10 @@ bool trova_cammino(grafo *g, int u, int v, int *path, int *pathLen, bool *visite
     visited[u] = true;
     path[(*pathLen)++] = u;
     if (u == v) return true;
-
     elemento *e = g->vicini[u];
     while (e) {
         if (e->msf && !visited[e->id]) {
-            if (trova_cammino(g, e->id, v, path, pathLen, visited))
-                return true;
+            if (trova_cammino(g, e->id, v, path, pathLen, visited)) return true;
         }
         e = e->next;
     }
@@ -337,8 +301,7 @@ bool trova_arco_max(grafo *g, int *path, int pathLen, int *maxU, int *maxV, int 
 void aggiorna_cCon_unione(grafo *g, int comp1, int comp2) {
     int newComp = comp1 < comp2 ? comp1 : comp2;
     for (int i = 0; i < g->numNodi; i++) {
-        if (g->cCon[i] == comp1 || g->cCon[i] == comp2)
-            g->cCon[i] = newComp;
+        if (g->cCon[i] == comp1 || g->cCon[i] == comp2) g->cCon[i] = newComp;
     }
     g->numCoCo--;
 }
@@ -364,22 +327,18 @@ void aggiorna_cCon_divisione(grafo *g, int u, int v) {
 
     int minVisited = u;
     for (int i = 0; i < g->numNodi; i++)
-        if (visited[i] && i < minVisited)
-            minVisited = i;
+        if (visited[i] && i < minVisited) minVisited = i;
 
     int minNotVisited = -1;
     for (int i = 0; i < g->numNodi; i++) {
         if (!visited[i] && g->cCon[i] != -1) {
-            if (minNotVisited == -1 || i < minNotVisited)
-                minNotVisited = i;
+            if (minNotVisited == -1 || i < minNotVisited) minNotVisited = i;
         }
     }
 
     for (int i = 0; i < g->numNodi; i++) {
-        if (visited[i])
-            g->cCon[i] = minVisited;
-        else if (g->cCon[i] != -1)
-            g->cCon[i] = minNotVisited;
+        if (visited[i]) g->cCon[i] = minVisited;
+        else if (g->cCon[i] != -1) g->cCon[i] = minNotVisited;
     }
     g->numCoCo++;
 
@@ -387,11 +346,10 @@ void aggiorna_cCon_divisione(grafo *g, int u, int v) {
     free(stack);
 }
 
-/* ========== OPERAZIONI ========== */
+/* ========== OPERAZIONI CON LOCK ========== */
 
 bool aggiungi_arco(grafo *g, int u, int v, int w) {
-    if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v)
-        return false;
+    if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v) return false;
 
     pthread_mutex_lock(&g->compMutex);
     int compU = g->cCon[u];
@@ -400,16 +358,13 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
         pthread_cond_wait(&g->compCond, &g->compMutex);
     }
     g->compBusy[compU] = true;
-    if (compV != compU)
-        g->compBusy[compV] = true;
-    pthread_mutex_unlock(&g->compMutex);
+    if (compV != compU) g->compBusy[compV] = true;
 
     int hash = hash_function(u, v, g->hashSize);
     pthread_mutex_lock(&g->mutexArray[hash % g->nMutex]);
 
     if (trova_arco(g, u, v) != NULL) {
         pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
-        pthread_mutex_lock(&g->compMutex);
         g->compBusy[compU] = false;
         if (compV != compU) g->compBusy[compV] = false;
         pthread_cond_broadcast(&g->compCond);
@@ -462,18 +417,15 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
 
     pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
 
-    pthread_mutex_lock(&g->compMutex);
     g->compBusy[compU] = false;
     if (compV != compU) g->compBusy[compV] = false;
     pthread_cond_broadcast(&g->compCond);
     pthread_mutex_unlock(&g->compMutex);
-
     return true;
 }
 
 bool cancella_arco(grafo *g, int u, int v) {
-    if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v)
-        return false;
+    if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v) return false;
 
     pthread_mutex_lock(&g->compMutex);
     int compU = g->cCon[u];
@@ -482,9 +434,7 @@ bool cancella_arco(grafo *g, int u, int v) {
         pthread_cond_wait(&g->compCond, &g->compMutex);
     }
     g->compBusy[compU] = true;
-    if (compV != compU)
-        g->compBusy[compV] = true;
-    pthread_mutex_unlock(&g->compMutex);
+    if (compV != compU) g->compBusy[compV] = true;
 
     int hash = hash_function(u, v, g->hashSize);
     pthread_mutex_lock(&g->mutexArray[hash % g->nMutex]);
@@ -492,7 +442,6 @@ bool cancella_arco(grafo *g, int u, int v) {
     arco *a = trova_arco(g, u, v);
     if (!a) {
         pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
-        pthread_mutex_lock(&g->compMutex);
         g->compBusy[compU] = false;
         if (compV != compU) g->compBusy[compV] = false;
         pthread_cond_broadcast(&g->compCond);
@@ -500,14 +449,16 @@ bool cancella_arco(grafo *g, int u, int v) {
         return false;
     }
 
+    int peso = a->weight;
     bool eraMSF = a->msf;
+
     rimuovi_adiacenza(g, u, v);
     rimuovi_adiacenza(g, v, u);
     rimuovi_hash(g, u, v);
     g->numArchi--;
 
     if (eraMSF) {
-        g->costoMSF -= a->weight;
+        g->costoMSF -= peso;
 
         bool *visited = calloc(g->numNodi, sizeof(bool));
         int *stack = malloc(g->numNodi * sizeof(int));
@@ -564,12 +515,10 @@ bool cancella_arco(grafo *g, int u, int v) {
 
     pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
 
-    pthread_mutex_lock(&g->compMutex);
     g->compBusy[compU] = false;
     if (compV != compU) g->compBusy[compV] = false;
     pthread_cond_broadcast(&g->compCond);
     pthread_mutex_unlock(&g->compMutex);
-
     return true;
 }
 
@@ -579,9 +528,7 @@ buffer_t* buffer_init(int size) {
     buffer_t *b = malloc(sizeof(buffer_t));
     b->buffer = malloc(size * sizeof(operazione));
     b->size = size;
-    b->head = 0;
-    b->tail = 0;
-    b->count = 0;
+    b->head = b->tail = b->count = 0;
     b->done = false;
     pthread_mutex_init(&b->mutex, NULL);
     pthread_cond_init(&b->notEmpty, NULL);
@@ -599,9 +546,7 @@ void buffer_destroy(buffer_t *b) {
 
 void buffer_insert(buffer_t *b, operazione op) {
     pthread_mutex_lock(&b->mutex);
-    while (b->count == b->size) {
-        pthread_cond_wait(&b->notFull, &b->mutex);
-    }
+    while (b->count == b->size) pthread_cond_wait(&b->notFull, &b->mutex);
     b->buffer[b->tail] = op;
     b->tail = (b->tail + 1) % b->size;
     b->count++;
@@ -611,13 +556,8 @@ void buffer_insert(buffer_t *b, operazione op) {
 
 bool buffer_remove(buffer_t *b, operazione *op) {
     pthread_mutex_lock(&b->mutex);
-    while (b->count == 0 && !b->done) {
-        pthread_cond_wait(&b->notEmpty, &b->mutex);
-    }
-    if (b->count == 0 && b->done) {
-        pthread_mutex_unlock(&b->mutex);
-        return false;
-    }
+    while (b->count == 0 && !b->done) pthread_cond_wait(&b->notEmpty, &b->mutex);
+    if (b->count == 0 && b->done) { pthread_mutex_unlock(&b->mutex); return false; }
     *op = b->buffer[b->head];
     b->head = (b->head + 1) % b->size;
     b->count--;
@@ -637,7 +577,7 @@ void buffer_set_done(buffer_t *b) {
 
 void* consumer_thread(void *arg) {
     thread_data_t *data = (thread_data_t*)arg;
-    (void)data->threadId; // sopprime warning
+    (void)data->threadId;
     grafo *g = data->g;
     buffer_t *buffer = data->buffer;
 
@@ -666,26 +606,20 @@ void* consumer_thread(void *arg) {
 
 /* ========== LETTURA FILE ========== */
 
-// Popola il grafo con gli archi (assume g->numNodi già impostato)
 bool popola_grafo(const char *filename, grafo *g) {
     FILE *f = fopen(filename, "r");
-    if (!f) {
-        fprintf(stderr, "Errore: impossibile aprire %s\n", filename);
-        return false;
-    }
+    if (!f) { fprintf(stderr, "Errore: impossibile aprire %s\n", filename); return false; }
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
-        if (line[0] == 'c') continue;
-        if (line[0] == 'p') continue; // già letto
+        if (line[0] == 'c' || line[0] == 'p') continue;
         if (line[0] == 'a') {
             int u, v, w;
             if (sscanf(line, "a %d %d %d", &u, &v, &w) == 3) {
-                u--; v--; // 0-based
+                u--; v--;
                 if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi) {
-                    fprintf(stderr, "Errore: nodo fuori range %d %d\n", u+1, v+1);
-                    fclose(f);
-                    return false;
+                    fprintf(stderr, "Nodo fuori range: %d %d\n", u+1, v+1);
+                    fclose(f); return false;
                 }
                 arco *a = crea_arco(u, v, w, false);
                 aggiungi_hash(g, a);
@@ -699,13 +633,9 @@ bool popola_grafo(const char *filename, grafo *g) {
     return true;
 }
 
-// Legge le operazioni e le inserisce nel buffer
 bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     FILE *f = fopen(filename, "r");
-    if (!f) {
-        fprintf(stderr, "Errore: impossibile aprire %s\n", filename);
-        return false;
-    }
+    if (!f) { fprintf(stderr, "Errore: impossibile aprire %s\n", filename); return false; }
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
@@ -714,6 +644,14 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
             if (sscanf(line, "+ %d %d %d", &op.u, &op.v, &op.w) == 3) {
                 op.op = '+';
                 op.u--; op.v--;
+                if (op.u < 0 || op.v < 0) { // se il file ha nodi 0-based, non convertire?
+                    // Se il file usa già 0-based, non sottrarre.
+                    // Per sicurezza, se dopo la sottrazione diventa negativo, ripristina.
+                    // Ma assumiamo che il file sia 1-based.
+                    // Se il file ha 0, lo segnaliamo come errore.
+                    fprintf(stderr, "Operazione con nodo <=0: + %d %d %d\n", op.u+1, op.v+1, op.w);
+                    continue;
+                }
                 buffer_insert(buffer, op);
             }
         } else if (line[0] == '-') {
@@ -721,6 +659,10 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
                 op.op = '-';
                 op.w = 0;
                 op.u--; op.v--;
+                if (op.u < 0 || op.v < 0) {
+                    fprintf(stderr, "Operazione con nodo <=0: - %d %d\n", op.u+1, op.v+1);
+                    continue;
+                }
                 buffer_insert(buffer, op);
             }
         }
@@ -760,8 +702,7 @@ int main(int argc, char *argv[]) {
     int numThreads = 3;
     int hashSize = 100000;
     int nMutex = 1000;
-    char *fileGrafo = NULL;
-    char *fileOperazioni = NULL;
+    char *fileGrafo = NULL, *fileOperazioni = NULL;
 
     while ((opt = getopt(argc, argv, "t:H:M:")) != -1) {
         switch (opt) {
@@ -782,43 +723,25 @@ int main(int argc, char *argv[]) {
     fileGrafo = argv[optind];
     fileOperazioni = argv[optind + 1];
 
-    // --- Prima lettura: estrai numero di nodi ---
+    // Prima lettura per estrarre N
     int N = 0, M = 0;
     FILE *f = fopen(fileGrafo, "r");
-    if (!f) {
-        fprintf(stderr, "Errore: impossibile aprire %s\n", fileGrafo);
-        return 1;
-    }
+    if (!f) { fprintf(stderr, "Errore: impossibile aprire %s\n", fileGrafo); return 1; }
     char line[256];
     while (fgets(line, sizeof(line), f)) {
-        if (line[0] == 'p') {
-            sscanf(line, "p sp %d %d", &N, &M);
-            break;
-        }
+        if (line[0] == 'p') { sscanf(line, "p sp %d %d", &N, &M); break; }
     }
     fclose(f);
-    if (N == 0) {
-        fprintf(stderr, "Errore: formato del file .gr non valido\n");
-        return 1;
-    }
+    if (N == 0) { fprintf(stderr, "Formato .gr non valido\n"); return 1; }
 
-    // Inizializza grafo con N+1 (include nodo 0)
     grafo *g = grafo_init(N + 1, hashSize, nMutex);
+    if (!popola_grafo(fileGrafo, g)) { grafo_destroy(g); return 1; }
 
-    // --- Seconda lettura: popola archi ---
-    if (!popola_grafo(fileGrafo, g)) {
-        grafo_destroy(g);
-        return 1;
-    }
-
-    // Calcola MSF
     kruskal(g);
 
-    // Stampa stato iniziale
     printf("%d %d %ld\n", g->numArchi, g->numCoCo, g->costoMSF);
     fflush(stdout);
 
-    // Buffer e thread
     buffer_t *buffer = buffer_init(1024);
 
     pthread_t *threads = malloc(numThreads * sizeof(pthread_t));
@@ -831,16 +754,10 @@ int main(int argc, char *argv[]) {
         pthread_create(&threads[i], NULL, consumer_thread, &threadData[i]);
     }
 
-    // Leggi operazioni (produttore)
-    if (!leggi_operazioni(fileOperazioni, buffer)) {
-        buffer_set_done(buffer);
-    }
+    leggi_operazioni(fileOperazioni, buffer);
     buffer_set_done(buffer);
 
-    // Attendi consumatori
-    for (int i = 0; i < numThreads; i++) {
-        pthread_join(threads[i], NULL);
-    }
+    for (int i = 0; i < numThreads; i++) pthread_join(threads[i], NULL);
 
     printf("Operazioni terminate\n");
     fflush(stdout);
@@ -856,28 +773,20 @@ int main(int argc, char *argv[]) {
     bool *visti = calloc(g->numNodi, sizeof(bool));
     int numCoCo = 0;
     for (int i = 0; i < g->numNodi; i++) {
-        if (!visti[g->cCon[i]]) {
-            visti[g->cCon[i]] = true;
-            numCoCo++;
-        }
+        if (!visti[g->cCon[i]]) { visti[g->cCon[i]] = true; numCoCo++; }
     }
     free(visti);
     long costoMSF = 0;
     for (int i = 0; i < g->hashSize; i++) {
         arco *a = g->gHash[i];
-        while (a) {
-            if (a->msf) costoMSF += a->weight;
-            a = a->next;
-        }
+        while (a) { if (a->msf) costoMSF += a->weight; a = a->next; }
     }
     printf("%d %d %ld\n", numArchi, numCoCo, costoMSF);
     fflush(stdout);
 
-    // Cleanup
     free(threads);
     free(threadData);
     buffer_destroy(buffer);
     grafo_destroy(g);
-
     return 0;
 }
