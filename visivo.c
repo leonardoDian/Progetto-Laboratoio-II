@@ -24,23 +24,23 @@ typedef struct elemento {
 } elemento;
 
 typedef struct {
-    arco **gHash;          // tabella hash (array di liste)
+    arco **gHash;          // tabella hash
     elemento **vicini;     // liste di adiacenza
-    int *cCon;             // etichetta componente per ogni nodo
-    int numCoCo;           // numero componenti connesse
-    long costoMSF;         // costo della MSF
+    int *cCon;             // componenti connesse
+    int numCoCo;
+    long costoMSF;
     int numNodi;
     int numArchi;
     int hashSize;
     int nMutex;
-    pthread_mutex_t *mutexArray;   // mutex per i bucket della hash
-    pthread_mutex_t compMutex;     // mutex per componenti e busy flags
+    pthread_mutex_t *mutexArray;
+    pthread_mutex_t compMutex;
     pthread_cond_t compCond;
-    bool *compBusy;                // flag busy per ogni componente
+    bool *compBusy;
 } grafo;
 
 typedef struct {
-    char op;        // '+' o '-'
+    char op;
     int u, v, w;
 } operazione;
 
@@ -62,7 +62,7 @@ typedef struct {
     int threadId;
 } thread_data_t;
 
-/* ========== UNION-FIND (solo per Kruskal iniziale) ========== */
+/* ========== UNION-FIND ========== */
 
 typedef struct {
     int *parent;
@@ -93,7 +93,8 @@ int uf_find(union_find *uf, int x) {
 }
 
 void uf_union(union_find *uf, int x, int y) {
-    int rx = uf_find(uf, x), ry = uf_find(uf, y);
+    int rx = uf_find(uf, x);
+    int ry = uf_find(uf, y);
     if (rx == ry) return;
     if (uf->rank[rx] < uf->rank[ry])
         uf->parent[rx] = ry;
@@ -150,13 +151,21 @@ grafo* grafo_init(int numNodi, int hashSize, int nMutex) {
 void grafo_destroy(grafo *g) {
     for (int i = 0; i < g->hashSize; i++) {
         arco *a = g->gHash[i];
-        while (a) { arco *tmp = a; a = a->next; free(tmp); }
+        while (a) {
+            arco *tmp = a;
+            a = a->next;
+            free(tmp);
+        }
     }
     free(g->gHash);
 
     for (int i = 0; i < g->numNodi; i++) {
         elemento *e = g->vicini[i];
-        while (e) { elemento *tmp = e; e = e->next; free(tmp); }
+        while (e) {
+            elemento *tmp = e;
+            e = e->next;
+            free(tmp);
+        }
     }
     free(g->vicini);
 
@@ -227,10 +236,9 @@ bool rimuovi_adiacenza(grafo *g, int idx, int id) {
     return false;
 }
 
-/* ========== KRUSKAL INIZIALE ========== */
+/* ========== KRUSKAL ========== */
 
 void kruskal(grafo *g) {
-    // Raccogli tutti gli archi
     int maxArchi = 0;
     for (int i = 0; i < g->hashSize; i++) {
         arco *a = g->gHash[i];
@@ -243,7 +251,7 @@ void kruskal(grafo *g) {
         while (a) { archi[count++] = a; a = a->next; }
     }
 
-    // Ordina per peso (bubble sort)
+    // Bubble sort per peso
     for (int i = 0; i < count-1; i++)
         for (int j = 0; j < count-i-1; j++)
             if (archi[j]->weight > archi[j+1]->weight) {
@@ -258,7 +266,6 @@ void kruskal(grafo *g) {
         if (uf_find(uf, u) != uf_find(uf, v)) {
             archi[i]->msf = true;
             g->costoMSF += archi[i]->weight;
-            // Imposta msf nelle liste di adiacenza
             for (elemento *e = g->vicini[u]; e; e = e->next)
                 if (e->id == v) { e->msf = true; break; }
             for (elemento *e = g->vicini[v]; e; e = e->next)
@@ -269,7 +276,6 @@ void kruskal(grafo *g) {
         }
     }
 
-    // Calcola cCon e numCoCo
     for (int i = 0; i < g->numNodi; i++) {
         int root = uf_find(uf, i);
         int min = i;
@@ -293,9 +299,8 @@ void kruskal(grafo *g) {
     free(archi);
 }
 
-/* ========== FUNZIONI PER MSF DINAMICA ========== */
+/* ========== MSF DINAMICA ========== */
 
-// DFS per trovare il cammino tra u e v nella MSF
 bool trova_cammino(grafo *g, int u, int v, int *path, int *pathLen, bool *visited) {
     visited[u] = true;
     path[(*pathLen)++] = u;
@@ -314,7 +319,6 @@ bool trova_cammino(grafo *g, int u, int v, int *path, int *pathLen, bool *visite
     return false;
 }
 
-// Trova l'arco di peso massimo nel percorso path
 bool trova_arco_max(grafo *g, int *path, int pathLen, int *maxU, int *maxV, int *maxW) {
     if (pathLen < 2) return false;
     *maxW = INT_MIN;
@@ -330,18 +334,15 @@ bool trova_arco_max(grafo *g, int *path, int pathLen, int *maxU, int *maxV, int 
     return true;
 }
 
-// Aggiorna cCon dopo un'unione (componenti comp1 e comp2)
 void aggiorna_cCon_unione(grafo *g, int comp1, int comp2) {
     int newComp = comp1 < comp2 ? comp1 : comp2;
     for (int i = 0; i < g->numNodi; i++) {
-        if (g->cCon[i] == comp1 || g->cCon[i] == comp2) {
+        if (g->cCon[i] == comp1 || g->cCon[i] == comp2)
             g->cCon[i] = newComp;
-        }
     }
     g->numCoCo--;
 }
 
-// Aggiorna cCon dopo una divisione (arco (u,v) rimosso dalla MSF)
 void aggiorna_cCon_divisione(grafo *g, int u, int v) {
     bool *visited = calloc(g->numNodi, sizeof(bool));
     int *stack = malloc(g->numNodi * sizeof(int));
@@ -361,13 +362,11 @@ void aggiorna_cCon_divisione(grafo *g, int u, int v) {
         }
     }
 
-    // Trova il minimo nodo nella componente di u (visitati)
     int minVisited = u;
-    for (int i = 0; i < g->numNodi; i++) {
+    for (int i = 0; i < g->numNodi; i++)
         if (visited[i] && i < minVisited)
             minVisited = i;
-    }
-    // Trova il minimo nodo nella componente di v (non visitati)
+
     int minNotVisited = -1;
     for (int i = 0; i < g->numNodi; i++) {
         if (!visited[i] && g->cCon[i] != -1) {
@@ -376,7 +375,6 @@ void aggiorna_cCon_divisione(grafo *g, int u, int v) {
         }
     }
 
-    // Assegna le nuove etichette
     for (int i = 0; i < g->numNodi; i++) {
         if (visited[i])
             g->cCon[i] = minVisited;
@@ -389,14 +387,12 @@ void aggiorna_cCon_divisione(grafo *g, int u, int v) {
     free(stack);
 }
 
-/* ========== OPERAZIONI SUL GRAFO (CON LOCK) ========== */
+/* ========== OPERAZIONI ========== */
 
-// Operazione di aggiunta arco
 bool aggiungi_arco(grafo *g, int u, int v, int w) {
     if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v)
         return false;
 
-    // Acquisisce il lock delle componenti per leggere e marcare busy
     pthread_mutex_lock(&g->compMutex);
     int compU = g->cCon[u];
     int compV = g->cCon[v];
@@ -408,14 +404,11 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
         g->compBusy[compV] = true;
     pthread_mutex_unlock(&g->compMutex);
 
-    // Blocca il bucket della hash
     int hash = hash_function(u, v, g->hashSize);
     pthread_mutex_lock(&g->mutexArray[hash % g->nMutex]);
 
-    // Ricontrolla se l'arco esiste già (protezione)
     if (trova_arco(g, u, v) != NULL) {
         pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
-        // Sblocca componenti
         pthread_mutex_lock(&g->compMutex);
         g->compBusy[compU] = false;
         if (compV != compU) g->compBusy[compV] = false;
@@ -424,7 +417,6 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
         return false;
     }
 
-    // Crea nuovo arco
     arco *nuovo = crea_arco(u, v, w, false);
     aggiungi_hash(g, nuovo);
     g->numArchi++;
@@ -432,7 +424,6 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
     aggiungi_adiacenza(g, v, u, w, false);
 
     if (compU != compV) {
-        // Unione di due componenti: l'arco entra nella MSF
         nuovo->msf = true;
         for (elemento *e = g->vicini[u]; e; e = e->next)
             if (e->id == v) { e->msf = true; break; }
@@ -441,15 +432,13 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
         g->costoMSF += w;
         aggiorna_cCon_unione(g, compU, compV);
     } else {
-        // Stessa componente: trova cammino e arco di peso max
         int *path = malloc(g->numNodi * sizeof(int));
         bool *visited = calloc(g->numNodi, sizeof(bool));
         int pathLen = 0;
         if (trova_cammino(g, u, v, path, &pathLen, visited)) {
-            int maxU = -1, maxV = -1, maxW;
+            int maxU = -1, maxV = -1, maxW = -1;
             if (trova_arco_max(g, path, pathLen, &maxU, &maxV, &maxW)) {
                 if (maxW > w) {
-                    // Sostituisci
                     arco *old = trova_arco(g, maxU, maxV);
                     if (old) {
                         old->msf = false;
@@ -473,7 +462,6 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
 
     pthread_mutex_unlock(&g->mutexArray[hash % g->nMutex]);
 
-    // Sblocca componenti
     pthread_mutex_lock(&g->compMutex);
     g->compBusy[compU] = false;
     if (compV != compU) g->compBusy[compV] = false;
@@ -483,12 +471,10 @@ bool aggiungi_arco(grafo *g, int u, int v, int w) {
     return true;
 }
 
-// Operazione di cancellazione arco
 bool cancella_arco(grafo *g, int u, int v) {
     if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi || u >= v)
         return false;
 
-    // Lock componenti
     pthread_mutex_lock(&g->compMutex);
     int compU = g->cCon[u];
     int compV = g->cCon[v];
@@ -515,18 +501,14 @@ bool cancella_arco(grafo *g, int u, int v) {
     }
 
     bool eraMSF = a->msf;
-
-    // Rimuovi da liste adiacenza
     rimuovi_adiacenza(g, u, v);
     rimuovi_adiacenza(g, v, u);
-    // Rimuovi da hash
     rimuovi_hash(g, u, v);
     g->numArchi--;
 
     if (eraMSF) {
         g->costoMSF -= a->weight;
 
-        // Trova le due componenti dopo la rimozione
         bool *visited = calloc(g->numNodi, sizeof(bool));
         int *stack = malloc(g->numNodi * sizeof(int));
         int top = 0;
@@ -544,7 +526,6 @@ bool cancella_arco(grafo *g, int u, int v) {
             }
         }
 
-        // Cerca arco minimo tra le due componenti
         int minW = INT_MAX;
         int bestU = -1, bestV = -1;
         for (int i = 0; i < g->numNodi; i++) {
@@ -574,7 +555,6 @@ bool cancella_arco(grafo *g, int u, int v) {
                     if (e->id == bestU) { e->msf = true; break; }
             }
         } else {
-            // Sono due componenti separate
             aggiorna_cCon_divisione(g, u, v);
         }
 
@@ -593,7 +573,7 @@ bool cancella_arco(grafo *g, int u, int v) {
     return true;
 }
 
-/* ========== FUNZIONI PER IL BUFFER ========== */
+/* ========== BUFFER ========== */
 
 buffer_t* buffer_init(int size) {
     buffer_t *b = malloc(sizeof(buffer_t));
@@ -657,6 +637,7 @@ void buffer_set_done(buffer_t *b) {
 
 void* consumer_thread(void *arg) {
     thread_data_t *data = (thread_data_t*)arg;
+    (void)data->threadId; // sopprime warning
     grafo *g = data->g;
     buffer_t *buffer = data->buffer;
 
@@ -683,9 +664,10 @@ void* consumer_thread(void *arg) {
     return NULL;
 }
 
-/* ========== FUNZIONI PER LA LETTURA DEI FILE ========== */
+/* ========== LETTURA FILE ========== */
 
-bool leggi_grafo(const char *filename, grafo *g) {
+// Popola il grafo con gli archi (assume g->numNodi già impostato)
+bool popola_grafo(const char *filename, grafo *g) {
     FILE *f = fopen(filename, "r");
     if (!f) {
         fprintf(stderr, "Errore: impossibile aprire %s\n", filename);
@@ -693,33 +675,31 @@ bool leggi_grafo(const char *filename, grafo *g) {
     }
 
     char line[256];
-    int numNodi = 0, numArchi = 0;
-    bool primaLinea = true;
-
     while (fgets(line, sizeof(line), f)) {
         if (line[0] == 'c') continue;
-        if (line[0] == 'p') {
-            if (primaLinea) {
-                sscanf(line, "p sp %d %d", &numNodi, &numArchi);
-                // Aggiungiamo +1 per includere il nodo 0
-                g->numNodi = numNodi + 1;
-                primaLinea = false;
-            }
-        } else if (line[0] == 'a') {
+        if (line[0] == 'p') continue; // già letto
+        if (line[0] == 'a') {
             int u, v, w;
-            sscanf(line, "a %d %d %d", &u, &v, &w);
-            u--; v--; // converti a 0-based
-            arco *a = crea_arco(u, v, w, false);
-            aggiungi_hash(g, a);
-            g->numArchi++;
-            aggiungi_adiacenza(g, u, v, w, false);
-            aggiungi_adiacenza(g, v, u, w, false);
+            if (sscanf(line, "a %d %d %d", &u, &v, &w) == 3) {
+                u--; v--; // 0-based
+                if (u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi) {
+                    fprintf(stderr, "Errore: nodo fuori range %d %d\n", u+1, v+1);
+                    fclose(f);
+                    return false;
+                }
+                arco *a = crea_arco(u, v, w, false);
+                aggiungi_hash(g, a);
+                g->numArchi++;
+                aggiungi_adiacenza(g, u, v, w, false);
+                aggiungi_adiacenza(g, v, u, w, false);
+            }
         }
     }
     fclose(f);
     return true;
 }
 
+// Legge le operazioni e le inserisce nel buffer
 bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     FILE *f = fopen(filename, "r");
     if (!f) {
@@ -733,7 +713,6 @@ bool leggi_operazioni(const char *filename, buffer_t *buffer) {
         if (line[0] == '+') {
             if (sscanf(line, "+ %d %d %d", &op.u, &op.v, &op.w) == 3) {
                 op.op = '+';
-                // Converti in 0-based
                 op.u--; op.v--;
                 buffer_insert(buffer, op);
             }
@@ -803,22 +782,45 @@ int main(int argc, char *argv[]) {
     fileGrafo = argv[optind];
     fileOperazioni = argv[optind + 1];
 
-    // Inizializza grafo con numNodi temporaneo 0 (verrà sovrascritto da leggi_grafo)
-    grafo *g = grafo_init(0, hashSize, nMutex);
+    // --- Prima lettura: estrai numero di nodi ---
+    int N = 0, M = 0;
+    FILE *f = fopen(fileGrafo, "r");
+    if (!f) {
+        fprintf(stderr, "Errore: impossibile aprire %s\n", fileGrafo);
+        return 1;
+    }
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == 'p') {
+            sscanf(line, "p sp %d %d", &N, &M);
+            break;
+        }
+    }
+    fclose(f);
+    if (N == 0) {
+        fprintf(stderr, "Errore: formato del file .gr non valido\n");
+        return 1;
+    }
 
-    if (!leggi_grafo(fileGrafo, g)) {
+    // Inizializza grafo con N+1 (include nodo 0)
+    grafo *g = grafo_init(N + 1, hashSize, nMutex);
+
+    // --- Seconda lettura: popola archi ---
+    if (!popola_grafo(fileGrafo, g)) {
         grafo_destroy(g);
         return 1;
     }
 
+    // Calcola MSF
     kruskal(g);
 
+    // Stampa stato iniziale
     printf("%d %d %ld\n", g->numArchi, g->numCoCo, g->costoMSF);
     fflush(stdout);
 
+    // Buffer e thread
     buffer_t *buffer = buffer_init(1024);
 
-    // Crea i thread consumatori PRIMA di leggere le operazioni
     pthread_t *threads = malloc(numThreads * sizeof(pthread_t));
     thread_data_t *threadData = malloc(numThreads * sizeof(thread_data_t));
 
@@ -829,14 +831,13 @@ int main(int argc, char *argv[]) {
         pthread_create(&threads[i], NULL, consumer_thread, &threadData[i]);
     }
 
-    // Leggi le operazioni e inseriscile nel buffer (produttore)
+    // Leggi operazioni (produttore)
     if (!leggi_operazioni(fileOperazioni, buffer)) {
         buffer_set_done(buffer);
-        // Attendi thread e termina
     }
     buffer_set_done(buffer);
 
-    // Attendi i thread
+    // Attendi consumatori
     for (int i = 0; i < numThreads; i++) {
         pthread_join(threads[i], NULL);
     }
@@ -846,7 +847,7 @@ int main(int argc, char *argv[]) {
 
     calcola_statistiche(g);
 
-    // Ricalcolo finali
+    // Ricalcolo finale
     int numArchi = 0;
     for (int i = 0; i < g->hashSize; i++) {
         arco *a = g->gHash[i];
