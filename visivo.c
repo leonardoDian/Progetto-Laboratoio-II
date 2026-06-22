@@ -635,25 +635,19 @@ bool popola_grafo(const char *filename, grafo *g) {
 
 bool leggi_operazioni(const char *filename, buffer_t *buffer) {
     FILE *f = fopen(filename, "r");
-    if (!f) {
-        fprintf(stderr, "Errore: impossibile aprire %s\n", filename);
-        return false;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        operazione op;
-        if (line[0] == '+') {
-            if (sscanf(line, "+ %d %d %d", &op.u, &op.v, &op.w) == 3) {
-                op.op = '+';
-                // Non convertire: i nodi sono già 0-based
-                buffer_insert(buffer, op);
+    if (!f) return false;
+    char op;
+    int u, v, w;
+    while (fscanf(f, " %c", &op) == 1) {
+        if (op == '+') {
+            if (fscanf(f, "%d %d %d", &u, &v, &w) == 3) {
+                operazione o = { '+', u, v, w };
+                buffer_insert(buffer, o);
             }
-        } else if (line[0] == '-') {
-            if (sscanf(line, "- %d %d", &op.u, &op.v) == 2) {
-                op.op = '-';
-                op.w = 0;
-                buffer_insert(buffer, op);
+        } else if (op == '-') {
+            if (fscanf(f, "%d %d", &u, &v) == 2) {
+                operazione o = { '-', u, v, 0 };
+                buffer_insert(buffer, o);
             }
         }
     }
