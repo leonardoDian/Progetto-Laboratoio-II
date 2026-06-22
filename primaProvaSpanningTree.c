@@ -739,6 +739,9 @@ int main(int argc, char *argv[]) {
     // Statistiche finali
     stampaStatistiche(&sd);
 
+    // Stampa stato finale
+    printf("%d %d %ld\n", g.numArchi, g.numCoCo, g.costoMSF);
+
     // Cleanup
     free(sd.component_busy);
     for (int i = 0; i < NMUTEX; i++) pthread_mutex_destroy(&sd.hash_mutexes[i]);
