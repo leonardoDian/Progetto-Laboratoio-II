@@ -217,12 +217,13 @@ typedef struct {
     pthread_mutex_t buffer_mutex;
     pthread_cond_t buffer_not_full;
     pthread_cond_t buffer_not_empty;
-    bool done; // segnale di fine produzione
+    bool done;
 } shared_data;
 
-// -------------------- FUNZIONI DI RICERCA CON LOCK HASH --------------------
+// -------------------- FUNZIONI AUSILIARIE CON LOCK --------------------
+
+// Cerca un arco nell'hash (assume mutex del bucket già acquisito)
 arco* trovaArcoInHash(grafo *g, int u, int v) {
-    // Assumiamo che il mutex del bucket sia già acquisito
     int hashSize = (g->numNodi / 4);
     if (hashSize < 1) hashSize = 1;
     int hash = (u + v) % hashSize;
@@ -235,34 +236,92 @@ arco* trovaArcoInHash(grafo *g, int u, int v) {
     return NULL;
 }
 
-// DFS per trovare l'arco massimo nel percorso nella MSF (usa i mutex hash)
-bool dfsTrovaMax(shared_data *sd, int curr, int target, bool *visited, arco **arcoMax, int *pesoMax) {
-    visited[curr] = true;
-    if (curr == target) return true;
+// Trova l'arco di peso massimo sul percorso tra u e v nell'albero MSF (senza lock, assume che il chiamante abbia già bloccato le componenti)
+bool trovaMassimoPercorso(shared_data *sd, int u, int v, arco **maxArco, int *maxPeso) {
     grafo *g = sd->g;
-    elemento *e = g->vicini[curr];
-    while (e) {
-        if (e->msf && !visited[e->id]) {
-            int hashSize = (g->numNodi / 4);
-            if (hashSize < 1) hashSize = 1;
-            int hash = (curr + e->id) % hashSize;
-            pthread_mutex_lock(&sd->hash_mutexes[hash % NMUTEX]);
-            arco *a = trovaArcoInHash(g, curr, e->id);
-            int peso = a ? a->weight : -1;
-            pthread_mutex_unlock(&sd->hash_mutexes[hash % NMUTEX]);
-            if (dfsTrovaMax(sd, e->id, target, visited, arcoMax, pesoMax)) {
-                if (peso > *pesoMax) {
-                    *pesoMax = peso;
-                    *arcoMax = a;
-                }
-                return true;
+    bool *visited = calloc(g->numNodi, sizeof(bool));
+    int *parent = malloc(g->numNodi * sizeof(int));
+    arco **parentEdge = malloc(g->numNodi * sizeof(arco*));
+    int *stack = malloc(g->numNodi * sizeof(int));
+    int top = 0;
+
+    visited[u] = true;
+    parent[u] = -1;
+    parentEdge[u] = NULL;
+    stack[top++] = u;
+
+    while (top > 0) {
+        int curr = stack[--top];
+        if (curr == v) break;
+        elemento *e = g->vicini[curr];
+        while (e) {
+            if (e->msf && !visited[e->id]) {
+                visited[e->id] = true;
+                parent[e->id] = curr;
+                // Ottieni l'arco con lock sul bucket
+                int hashSize = (g->numNodi / 4);
+                if (hashSize < 1) hashSize = 1;
+                int hash = (curr + e->id) % hashSize;
+                pthread_mutex_lock(&sd->hash_mutexes[hash % NMUTEX]);
+                arco *a = trovaArcoInHash(g, curr, e->id);
+                parentEdge[e->id] = a;
+                pthread_mutex_unlock(&sd->hash_mutexes[hash % NMUTEX]);
+                stack[top++] = e->id;
             }
+            e = e->next;
         }
-        e = e->next;
     }
-    return false;
+
+    if (!visited[v]) {
+        free(visited); free(parent); free(parentEdge); free(stack);
+        return false;
+    }
+
+    *maxPeso = -1;
+    *maxArco = NULL;
+    int curr = v;
+    while (curr != u) {
+        arco *a = parentEdge[curr];
+        if (a && a->weight > *maxPeso) {
+            *maxPeso = a->weight;
+            *maxArco = a;
+        }
+        curr = parent[curr];
+    }
+    free(visited); free(parent); free(parentEdge); free(stack);
+    return true;
 }
 
+// Trova l'arco di peso minimo che collega le due componenti (senza lock sulle componenti, ma assume che siano bloccate)
+arco* trovaArcoMinimoTraComponenti(shared_data *sd, int compA, int compB) {
+    grafo *g = sd->g;
+    int hashSize = (g->numNodi / 4);
+    if (hashSize < 1) hashSize = 1;
+    arco *best = NULL;
+    int bestWeight = INT_MAX;
+
+    for (int i = 0; i < hashSize; i++) {
+        pthread_mutex_lock(&sd->hash_mutexes[i % NMUTEX]);
+        arco *a = g->gHash[i];
+        while (a) {
+            if (!a->msf) {
+                int ca = g->cCon[a->u];
+                int cb = g->cCon[a->v];
+                if ((ca == compA && cb == compB) || (ca == compB && cb == compA)) {
+                    if (a->weight < bestWeight) {
+                        bestWeight = a->weight;
+                        best = a;
+                    }
+                }
+            }
+            a = a->next;
+        }
+        pthread_mutex_unlock(&sd->hash_mutexes[i % NMUTEX]);
+    }
+    return best;
+}
+
+// Rimuove un elemento dalla lista di adiacenza (nessun lock)
 void rimuoviDaLista(grafo *g, int from, int id) {
     elemento *e = g->vicini[from], *prev = NULL;
     while (e) {
@@ -324,12 +383,11 @@ void addArco(shared_data *sd, int u, int v, int w) {
     int cu, cv;
     lock_components(sd, u, v, &cu, &cv);
 
+    // Verifica se l'arco esiste già (con lock hash)
     int hashSize = (g->numNodi / 4);
     if (hashSize < 1) hashSize = 1;
     int hash = (u + v) % hashSize;
     pthread_mutex_lock(&sd->hash_mutexes[hash % NMUTEX]);
-
-    // Controlla se l'arco esiste già
     if (trovaArcoInHash(g, u, v) != NULL) {
         pthread_mutex_unlock(&sd->hash_mutexes[hash % NMUTEX]);
         unlock_components(sd, cu, cv);
@@ -339,7 +397,7 @@ void addArco(shared_data *sd, int u, int v, int w) {
         return;
     }
 
-    // Crea e inserisce arco e liste di adiacenza
+    // Crea nuovo arco e aggiunge alle strutture
     arco *nuovo = malloc(sizeof(arco));
     nuovo->u = u; nuovo->v = v; nuovo->weight = w; nuovo->msf = false;
     nuovo->next = g->gHash[hash];
@@ -357,28 +415,27 @@ void addArco(shared_data *sd, int u, int v, int w) {
 
     pthread_mutex_unlock(&sd->hash_mutexes[hash % NMUTEX]);
 
-    // Aggiorna numArchi in modo atomico
+    // Aggiorna numArchi
     pthread_mutex_lock(&sd->stats_mutex);
     g->numArchi++;
     pthread_mutex_unlock(&sd->stats_mutex);
 
-    bool aggiuntoMSF = false;
+    bool aggiunto = false;
 
     if (cu == cv) {
         // Stessa componente: cerca arco massimo nel percorso
-        bool *visited = calloc(g->numNodi, sizeof(bool));
-        arco *arcoMax = NULL;
-        int pesoMax = -1;
-        if (dfsTrovaMax(sd, u, v, visited, &arcoMax, &pesoMax)) {
-            if (w < pesoMax && arcoMax != NULL) {
-                // Sostituisci: rimuovi arcoMax dalla MSF
-                arcoMax->msf = false;
-                for (elemento *e = g->vicini[arcoMax->u]; e; e = e->next)
-                    if (e->id == arcoMax->v) { e->msf = false; break; }
-                for (elemento *e = g->vicini[arcoMax->v]; e; e = e->next)
-                    if (e->id == arcoMax->u) { e->msf = false; break; }
+        arco *maxArco = NULL;
+        int maxPeso = -1;
+        if (trovaMassimoPercorso(sd, u, v, &maxArco, &maxPeso)) {
+            if (w < maxPeso && maxArco != NULL) {
+                // Rimuovi l'arco massimo dalla MSF
+                maxArco->msf = false;
+                for (elemento *e = g->vicini[maxArco->u]; e; e = e->next)
+                    if (e->id == maxArco->v) { e->msf = false; break; }
+                for (elemento *e = g->vicini[maxArco->v]; e; e = e->next)
+                    if (e->id == maxArco->u) { e->msf = false; break; }
                 pthread_mutex_lock(&sd->stats_mutex);
-                g->costoMSF -= arcoMax->weight;
+                g->costoMSF -= maxArco->weight;
                 pthread_mutex_unlock(&sd->stats_mutex);
 
                 // Aggiungi il nuovo arco alla MSF
@@ -388,10 +445,9 @@ void addArco(shared_data *sd, int u, int v, int w) {
                 pthread_mutex_lock(&sd->stats_mutex);
                 g->costoMSF += w;
                 pthread_mutex_unlock(&sd->stats_mutex);
-                aggiuntoMSF = true;
+                aggiunto = true;
             }
         }
-        free(visited);
     } else {
         // Componenti diverse: aggiungi alla MSF
         nuovo->msf = true;
@@ -401,26 +457,33 @@ void addArco(shared_data *sd, int u, int v, int w) {
         g->costoMSF += w;
         pthread_mutex_unlock(&sd->stats_mutex);
 
-        // Unisci componenti (dobbiamo aggiornare cCon)
-        // Nota: abbiamo già i lock sulle componenti, possiamo modificare cCon in sicurezza
-        int oldComp = cu;   // cu è la componente di v? In realtà dopo lock_components, cu e cv sono le componenti originali
+        // Unisci le componenti (cu in cv, ma assicuriamoci che l'ID sia il minimo)
+        int oldComp = cu;
         int newComp = cv;
-        for (int i = 0; i < g->numNodi; i++)
+        if (newComp < oldComp) { // se cv è più piccolo, scambiamo per unire il più grande nel più piccolo
+            int tmp = oldComp; oldComp = newComp; newComp = tmp;
+        }
+        for (int i = 0; i < g->numNodi; i++) {
             if (g->cCon[i] == oldComp)
                 g->cCon[i] = newComp;
+        }
         pthread_mutex_lock(&sd->stats_mutex);
         g->numCoCo--;
         pthread_mutex_unlock(&sd->stats_mutex);
-        aggiuntoMSF = true;
+        aggiunto = true;
     }
 
-    // Se non aggiunto alla MSF, non serve modificare numCoCo
-    // Rilascia i lock delle componenti (attenzione: se sono cambiate, dobbiamo usare le nuove)
+    // Rilascia lock componenti
     unlock_components(sd, cu, cv);
 
-    // Stampa risultato con lock
+    // Stampa risultato
+    pthread_mutex_lock(&sd->stats_mutex);
+    int nArchi = g->numArchi;
+    int nCoCo = g->numCoCo;
+    long costo = g->costoMSF;
+    pthread_mutex_unlock(&sd->stats_mutex);
     pthread_mutex_lock(&sd->print_mutex);
-    printf("+ %d %d %d %d %d %ld\n", u, v, w, g->numArchi, g->numCoCo, g->costoMSF);
+    printf("+ %d %d %d %d %d %ld\n", u, v, w, nArchi, nCoCo, costo);
     pthread_mutex_unlock(&sd->print_mutex);
 }
 
@@ -473,17 +536,17 @@ void cancArco(shared_data *sd, int u, int v) {
     rimuoviDaLista(g, u, v);
     rimuoviDaLista(g, v, u);
 
-    // Aggiorna numArchi
     pthread_mutex_lock(&sd->stats_mutex);
     g->numArchi--;
     pthread_mutex_unlock(&sd->stats_mutex);
 
     if (eraInMSF) {
+        // Rimuovi dalla MSF
         pthread_mutex_lock(&sd->stats_mutex);
         g->costoMSF -= peso;
         pthread_mutex_unlock(&sd->stats_mutex);
 
-        // Dividi la componente: visitiamo da u senza attraversare l'arco rimosso
+        // Dividi la componente: visita da u senza attraversare l'arco rimosso
         bool *visited = calloc(g->numNodi, sizeof(bool));
         int *stack = malloc(g->numNodi * sizeof(int));
         int top = 0;
@@ -502,89 +565,72 @@ void cancArco(shared_data *sd, int u, int v) {
         }
         free(stack);
 
-        // Determina nuova componente per i visitati (minimo id)
-        int minVisited = u;
-        for (int i = 0; i < g->numNodi; i++)
-            if (visited[i] && i < minVisited) minVisited = i;
-
+        // Determina nuova componente per i visitati (minimo ID)
+        int compU = u;
+        for (int i = 0; i < g->numNodi; i++) {
+            if (visited[i] && i < compU) compU = i;
+        }
         int oldComp = g->cCon[u];
-        int compU = minVisited;
         int compV = -1;
-        // Assegna i visitati a compU
-        for (int i = 0; i < g->numNodi; i++)
-            if (visited[i]) g->cCon[i] = compU;
-
-        // I non visitati che erano in oldComp formeranno l'altra componente
         for (int i = 0; i < g->numNodi; i++) {
             if (!visited[i] && g->cCon[i] == oldComp) {
                 if (compV == -1 || i < compV) compV = i;
             }
         }
-        if (compV == -1) compV = oldComp;
+        if (compV == -1) compV = oldComp; // caso raro (non dovrebbe accadere)
+
+        // Assegna le nuove componenti
         for (int i = 0; i < g->numNodi; i++) {
-            if (!visited[i] && g->cCon[i] == oldComp)
-                g->cCon[i] = compV;
+            if (visited[i]) g->cCon[i] = compU;
+            else if (g->cCon[i] == oldComp) g->cCon[i] = compV;
         }
         free(visited);
 
         pthread_mutex_lock(&sd->stats_mutex);
-        g->numCoCo++;   // la componente si è divisa
+        g->numCoCo++;
         pthread_mutex_unlock(&sd->stats_mutex);
 
-        // Cerca arco alternativo
-        arco *arcoMin = NULL;
-        int pesoMin = INT_MAX;
-        // Scorri tutti i bucket con lock singoli
-        for (int i = 0; i < hashSize; i++) {
-            pthread_mutex_lock(&sd->hash_mutexes[i % NMUTEX]);
-            arco *a2 = g->gHash[i];
-            while (a2) {
-                if (!a2->msf &&
-                    ((g->cCon[a2->u] == compU && g->cCon[a2->v] == compV) ||
-                     (g->cCon[a2->u] == compV && g->cCon[a2->v] == compU))) {
-                    if (a2->weight < pesoMin) {
-                        pesoMin = a2->weight;
-                        arcoMin = a2;
-                    }
-                }
-                a2 = a2->next;
-            }
-            pthread_mutex_unlock(&sd->hash_mutexes[i % NMUTEX]);
-        }
-
-        if (arcoMin != NULL) {
-            // Aggiungi arcoMin alla MSF
-            // Blocca il bucket di arcoMin per aggiornare msf
-            int hashMin = (arcoMin->u + arcoMin->v) % hashSize;
-            pthread_mutex_lock(&sd->hash_mutexes[hashMin % NMUTEX]);
-            arcoMin->msf = true;
-            for (elemento *e = g->vicini[arcoMin->u]; e; e = e->next)
-                if (e->id == arcoMin->v) { e->msf = true; break; }
-            for (elemento *e = g->vicini[arcoMin->v]; e; e = e->next)
-                if (e->id == arcoMin->u) { e->msf = true; break; }
-            pthread_mutex_unlock(&sd->hash_mutexes[hashMin % NMUTEX]);
+        // Cerca arco alternativo tra le due componenti
+        arco *alternativo = trovaArcoMinimoTraComponenti(sd, compU, compV);
+        if (alternativo != NULL) {
+            // Aggiungi l'arco alternativo alla MSF
+            int hashAlt = (alternativo->u + alternativo->v) % hashSize;
+            pthread_mutex_lock(&sd->hash_mutexes[hashAlt % NMUTEX]);
+            alternativo->msf = true;
+            for (elemento *e = g->vicini[alternativo->u]; e; e = e->next)
+                if (e->id == alternativo->v) { e->msf = true; break; }
+            for (elemento *e = g->vicini[alternativo->v]; e; e = e->next)
+                if (e->id == alternativo->u) { e->msf = true; break; }
+            pthread_mutex_unlock(&sd->hash_mutexes[hashAlt % NMUTEX]);
 
             pthread_mutex_lock(&sd->stats_mutex);
-            g->costoMSF += arcoMin->weight;
+            g->costoMSF += alternativo->weight;
             pthread_mutex_unlock(&sd->stats_mutex);
 
             // Unisci le due componenti
-            int newComp = compU < compV ? compU : compV;
-            int oldComp2 = compU > compV ? compU : compV;
-            for (int i = 0; i < g->numNodi; i++)
+            int newComp = (compU < compV) ? compU : compV;
+            int oldComp2 = (compU > compV) ? compU : compV;
+            for (int i = 0; i < g->numNodi; i++) {
                 if (g->cCon[i] == oldComp2)
                     g->cCon[i] = newComp;
+            }
             pthread_mutex_lock(&sd->stats_mutex);
             g->numCoCo--;
             pthread_mutex_unlock(&sd->stats_mutex);
         }
     }
 
-    // Rilascia i lock delle componenti (usando le componenti originali, ma potrebbero essere cambiate)
+    // Rilascia lock componenti
     unlock_components(sd, cu, cv);
 
+    // Stampa risultato
+    pthread_mutex_lock(&sd->stats_mutex);
+    int nArchi = g->numArchi;
+    int nCoCo = g->numCoCo;
+    long costo = g->costoMSF;
+    pthread_mutex_unlock(&sd->stats_mutex);
     pthread_mutex_lock(&sd->print_mutex);
-    printf("- %d %d %d %d %ld\n", u, v, g->numArchi, g->numCoCo, g->costoMSF);
+    printf("- %d %d %d %d %ld\n", u, v, nArchi, nCoCo, costo);
     pthread_mutex_unlock(&sd->print_mutex);
 }
 
@@ -634,12 +680,10 @@ void *worker_thread(void *arg) {
         pthread_cond_signal(&sd->buffer_not_full);
         pthread_mutex_unlock(&sd->buffer_mutex);
 
-        // Esegui operazione
-        if (op.op == '+') {
+        if (op.op == '+')
             addArco(sd, op.u, op.v, op.w);
-        } else if (op.op == '-') {
+        else if (op.op == '-')
             cancArco(sd, op.u, op.v);
-        }
     }
     return NULL;
 }
@@ -659,21 +703,15 @@ int main(int argc, char *argv[]) {
     FILE *fMod = fopen(argv[2], "r");
     if (!fMod) { perror("Errore apertura file modifiche"); fclose(fGrafo); return 1; }
 
-    // Alloca e inizializza grafo
     grafo g;
     registraGrafo(fGrafo, &g);
     fclose(fGrafo);
 
-    // Esegue Kruskal
     kruskal(&g);
-
-    // Stampa stato iniziale
     printf("%d %d %ld\n", g.numArchi, g.numCoCo, g.costoMSF);
 
-    // Alloca e inizializza struttura condivisa
     shared_data sd;
     sd.g = &g;
-    // Inizializza mutex hash
     for (int i = 0; i < NMUTEX; i++) pthread_mutex_init(&sd.hash_mutexes[i], NULL);
     pthread_mutex_init(&sd.comp_mutex, NULL);
     pthread_cond_init(&sd.comp_cond, NULL);
@@ -686,19 +724,16 @@ int main(int argc, char *argv[]) {
     pthread_cond_init(&sd.buffer_not_empty, NULL);
     sd.done = false;
 
-    // Crea thread consumatori
     pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
     for (int i = 0; i < num_threads; i++) {
         pthread_create(&threads[i], NULL, worker_thread, &sd);
     }
 
-    // Produttore: legge operazioni dal file e le inserisce nel buffer
     char *linea = NULL;
     size_t lunghezza = 0;
     ssize_t nLetti;
     while ((nLetti = getline(&linea, &lunghezza, fMod)) != -1) {
-        if (linea[0] == '\n' || linea[0] == '\0' || linea[0] == 'c')
-            continue;
+        if (linea[0] == '\n' || linea[0] == '\0' || linea[0] == 'c') continue;
         operazione_t op;
         if (linea[0] == '+') {
             if (sscanf(linea, "+ %d %d %d", &op.u, &op.v, &op.w) == 3) {
@@ -712,9 +747,8 @@ int main(int argc, char *argv[]) {
         } else continue;
 
         pthread_mutex_lock(&sd.buffer_mutex);
-        while (sd.count == BUFFER_SIZE) {
+        while (sd.count == BUFFER_SIZE)
             pthread_cond_wait(&sd.buffer_not_full, &sd.buffer_mutex);
-        }
         sd.buffer[sd.tail] = op;
         sd.tail = (sd.tail + 1) % BUFFER_SIZE;
         sd.count++;
@@ -724,23 +758,16 @@ int main(int argc, char *argv[]) {
     free(linea);
     fclose(fMod);
 
-    // Segnala fine produzione
     pthread_mutex_lock(&sd.buffer_mutex);
     sd.done = true;
     pthread_cond_broadcast(&sd.buffer_not_empty);
     pthread_mutex_unlock(&sd.buffer_mutex);
 
-    // Attendi thread
-    for (int i = 0; i < num_threads; i++) {
+    for (int i = 0; i < num_threads; i++)
         pthread_join(threads[i], NULL);
-    }
     free(threads);
 
-    // Statistiche finali
     stampaStatistiche(&sd);
-
-    // Stampa stato finale
-    printf("%d %d %ld\n", g.numArchi, g.numCoCo, g.costoMSF);
 
     // Cleanup
     free(sd.component_busy);
@@ -752,9 +779,6 @@ int main(int argc, char *argv[]) {
     pthread_mutex_destroy(&sd.buffer_mutex);
     pthread_cond_destroy(&sd.buffer_not_full);
     pthread_cond_destroy(&sd.buffer_not_empty);
-
-    // Libera il grafo (per completezza)
-    // (omesso per brevità, ma si può implementare)
 
     return 0;
 }
