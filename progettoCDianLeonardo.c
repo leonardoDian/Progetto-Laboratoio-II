@@ -96,7 +96,7 @@ void registraGrafo(FILE *f, grafo *g)
             case 'p':
                 {
                     int nodiG, archiG;
-                    scanf("p sp %d %d", &nodiG, &archiG);
+                    sscanf("p sp %d %d", &nodiG, &archiG);
                     g->numNodi = nodiG + 1; // +1 perche lo 0 non viene conteggiato nel conto totale dei nodi nel file
                     g->numArchi = archiG;
 
@@ -143,7 +143,7 @@ void registraGrafo(FILE *f, grafo *g)
                     int hashFun = (u+v) % g->hashSize;
 
                     // Creo l'arco per inerirlo nella tabella di hashing
-                    arco *a = malloc(sizeof (arco*));
+                    arco *a = malloc(sizeof (arco));
                     a->msf = false;
                     a->next = g->gHash[hashFun];
                     a->u = u;
@@ -152,14 +152,14 @@ void registraGrafo(FILE *f, grafo *g)
                     g->gHash[hashFun] = a;
 
                     // Creo e inserisco gli elemnti per le liste di adiacenza
-                    elemento *e1= malloc(sizeof (elemento*));
+                    elemento *e1= malloc(sizeof (elemento));
                     e1->id = v;
                     e1->msf = false;
                     e1->w = w;
                     e1->next = g->vicini[u];
                     g->vicini[u] = e1;
 
-                    elemento *e2 = malloc(sizeof (elemento*));
+                    elemento *e2 = malloc(sizeof (elemento));
                     e2->id = u;
                     e2->msf = false;
                     e2->w = w;
