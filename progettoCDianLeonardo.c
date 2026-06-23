@@ -89,7 +89,7 @@ void registraGrafo(FILE *f, grafo *g)
 
     // Ciclo di registrazione del grafo
     // Prendo l'arco e aggiorno tutte le strutture all'interno della struttura dati
-    while((charLetti = getline(&stringa, &lenStringa, &f)) != -1)
+    while((charLetti = getline(&stringa, &lenStringa, f)) != -1)
     {
         switch(stringa[0])
         {
