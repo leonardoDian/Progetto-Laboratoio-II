@@ -96,7 +96,7 @@ void registraGrafo(FILE *f, grafo *g)
             case 'p':
                 {
                     int nodiG, archiG;
-                    sscanf("p sp %d %d", &nodiG, &archiG);
+                    sscanf(stringa ,"p sp %d %d", &nodiG, &archiG);
                     g->numNodi = nodiG + 1; // +1 perche lo 0 non viene conteggiato nel conto totale dei nodi nel file
                     g->numArchi = archiG;
 
@@ -130,7 +130,7 @@ void registraGrafo(FILE *f, grafo *g)
             case 'a':
                 {
                     int u, v, w;
-                    scanf("a %d %d %d",&u,&v,&w);
+                    sscanf(stringa, "a %d %d %d",&u,&v,&w);
                     
                     // Controllo se l'arco è valido 
                     if(u < 0 || u >= g->numNodi || v < 0 || v >= g->numNodi)
