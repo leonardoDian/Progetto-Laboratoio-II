@@ -143,7 +143,7 @@ void registraGrafo(FILE *f, grafo *g)
                     int hashFun = (u+v) % g->hashSize;
 
                     // Creo l'arco per inerirlo nella tabella di hashing
-                    arco *a;
+                    arco *a = malloc(sizeof (arco*));
                     a->msf = false;
                     a->next = g->gHash[hashFun];
                     a->u = u;
@@ -152,14 +152,14 @@ void registraGrafo(FILE *f, grafo *g)
                     g->gHash[hashFun] = a;
 
                     // Creo e inserisco gli elemnti per le liste di adiacenza
-                    elemento *e1;
+                    elemento *e1= malloc(sizeof (elemento*));
                     e1->id = v;
                     e1->msf = false;
                     e1->w = w;
                     e1->next = g->vicini[u];
                     g->vicini[u] = e1;
 
-                    elemento *e2;
+                    elemento *e2 = malloc(sizeof (elemento*));
                     e2->id = u;
                     e2->msf = false;
                     e2->w = w;
@@ -177,9 +177,9 @@ void registraGrafo(FILE *f, grafo *g)
                 break;
         }
 
-        // Libero la stringa per la lettura delle righe 
-        free(stringa);
     }
+    // Libero la stringa per la lettura delle righe 
+    free(stringa);
 }
 
 // Funzioni union-rank per la struttura union find per la ricerca delle componenti connesse e l'algoritmo di kruskal
@@ -287,7 +287,7 @@ void kruskal(grafo *g) {
 int main(int argc, char *argv[])
 {
     // Controllo che vengano passati tutti i file richiesti
-    if(argc =! 4)
+    if(argc != 4)
     {
         fprintf(stderr, "Input errato\n Esempio: ./msf.out esempio.gr esempio.mp [NUM_THREADS (MAX 16)]\n");
         return 1;
