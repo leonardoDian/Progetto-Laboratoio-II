@@ -7,6 +7,7 @@
 
 // ----- DEFINES -----
 #define MAX_THREADS 16
+#define BUFFER_SIZE 1024
 
 // ----- STRUTTURE DATI ------
 
@@ -41,6 +42,24 @@ typedef struct {
     unionFind *uf;
 } grafo;
 
+typedef struct {
+    char op;        // '+' o '-'
+    int u, v, w;
+} operazione_t;
+
+typedef struct {
+    grafo *g;
+    pthread_mutex_t mutexDati; 
+    pthread_mutex_t mutexStampa;
+    operazione_t buffer[BUFFER_SIZE];
+    int testa;
+    int coda; 
+    int num;
+    pthread_mutex_t mutexBuffer;
+    pthread_cond_t libero;
+    pthread_cond_t pieno;
+    bool finito;
+} datiCondivisi;
 
 // ----- FUNZIONI -------
 
@@ -208,7 +227,8 @@ int cmpArchi(const void *a, const void *b)
     return aa->weight - bb->weight;
 }
 
-void kruskal(grafo *g) {
+void kruskal(grafo *g) 
+{
     if (g->hashSize < 1) g->hashSize = 1;
     arco **arr = malloc(g->numArchi * sizeof(arco*));
     int idx = 0;
@@ -283,6 +303,57 @@ void kruskal(grafo *g) {
     free(arr);
 }
 
+// Funzione per trovare l'arco nel hash
+arco *trovaArcoHash(int u, int v, grafo *g)
+{
+    arco *a = NULL;
+    if(u >= 0 && u < g->numNodi && v >= 0 && v < g->numNodi) 
+    {
+        int key = (u+v) % g->hashSize;
+        a = g->gHash[key];
+        while(a != NULL && (a->u != u && a->v != v ))
+        {
+            a = g->gHash[key]->next;
+        }
+    }
+    return a;
+}
+
+// Funzione per l'aggiunta di archi al grafo
+
+// Funzione per la dellocazione del grafo e di tutto quello collegarto a esso
+void deallocaGrafo(grafo *g)
+{
+    for(int i = 0; g->hashSize > i; i++) 
+    {
+        while(g->gHash[i] != NULL)
+        {
+            arco *a = g->gHash[i];
+            g->gHash[i] = g->gHash[i]->next;
+            free(a);
+        }
+    }
+
+    for(int i = 0; g->numNodi > i; i++) 
+    {
+        while(g->vicini[i] != NULL)
+        {
+            elemento *e = g->vicini[i];
+            g->vicini[i] = g->vicini[i]->next;
+            free(e);
+        }
+    }
+    
+    free(g->uf->parent);
+    free(g->uf->rank);
+    free(g->uf);
+    free(g->cCon);
+    free(g->gHash);
+    free(g->vicini);
+    free(g);
+}
+
+
 // ---- MAIN ----
 int main(int argc, char *argv[])
 {
@@ -317,15 +388,20 @@ int main(int argc, char *argv[])
         return 1; 
     }
 
+    // Creazione del grafo e resitrazione dei dati
     grafo g;
     registraGrafo(fGrafo, &g);
     fclose(fGrafo);
 
+    // Creazione dell'albero di costo minimo
     kruskal(&g);
     printf("%d %d %ld\n", g.numArchi, g.numCoCo, g.costoMSF);
 
+
     fclose(fMod);
 
+    // Deallocazione grafo prima della fine del programma
+    deallocaGrafo(&g);
 
     return 0;
 }
