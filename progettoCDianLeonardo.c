@@ -350,7 +350,6 @@ void deallocaGrafo(grafo *g)
     free(g->cCon);
     free(g->gHash);
     free(g->vicini);
-    free(g);
 }
 
 
@@ -402,6 +401,6 @@ int main(int argc, char *argv[])
 
     // Deallocazione grafo prima della fine del programma
     deallocaGrafo(&g);
-
+    
     return 0;
 }
